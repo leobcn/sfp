@@ -57,6 +57,19 @@ func (V Vertices) Iterate() (vi bliss.VertexIterator) {
 	return vi
 }
 
+func (V Vertices) Colors() map[int][]int {
+	colors := make(map[int][]int)
+	vidx := 0
+	for color, vi := V.Iterate()(); vi != nil; color, vi = vi() {
+		if _, has := colors[color]; !has {
+			colors[color] = make([]int, 0, 10)
+		}
+		colors[color] = append(colors[color], vidx)
+		vidx++
+	}
+	return colors
+}
+
 func (E Edges) Iterate() (ei bliss.EdgeIterator) {
 	i := 0
 	ei = func() (src, targ, color int, _ bliss.EdgeIterator) {
@@ -471,4 +484,28 @@ func (sg *SubGraph) String() string {
 		))
 	}
 	return fmt.Sprintf("{%v:%v}%v%v", len(sg.E), len(sg.V), strings.Join(V, ""), strings.Join(E, ""))
+}
+
+func (n *SubGraph) Equals(o types.Equatable) bool {
+	a := types.ByteSlice(n.Label())
+	switch b := o.(type) {
+	case *SubGraph:
+		return a.Equals(types.ByteSlice(b.Label()))
+	default:
+		return false
+	}
+}
+
+func (n *SubGraph) Less(o types.Sortable) bool {
+	a := types.ByteSlice(n.Label())
+	switch b := o.(type) {
+	case *SubGraph:
+		return a.Less(types.ByteSlice(b.Label()))
+	default:
+		return false
+	}
+}
+
+func (n *SubGraph) Hash() int {
+	return types.ByteSlice(n.Label()).Hash()
 }

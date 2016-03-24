@@ -26,6 +26,7 @@ import (
 	"github.com/timtadh/sfp/stores/int_int"
 	"github.com/timtadh/sfp/stores/int_json"
 	"github.com/timtadh/sfp/types/digraph/ext"
+	"github.com/timtadh/sfp/types/digraph/subgraph"
 )
 
 type ErrorList []error
@@ -248,6 +249,32 @@ func (dt *Digraph) Init(G *goiso.Graph) (err error) {
 			if err != nil {
 				return err
 			}
+		}
+	}
+
+	for i := range G.E {
+		x := &G.E[i]
+		e := subgraph.Edge{
+			Src:G.V[x.Src].Color,
+			Targ:G.V[x.Targ].Color,
+			Color:x.Color,
+		}
+		if G.ColorFrequency(e.Src) < dt.config.Support {
+			continue
+		}
+		if G.ColorFrequency(e.Targ) < dt.config.Support {
+			continue
+		}
+		if G.ColorFrequency(e.Color) < dt.config.Support {
+			continue
+		}
+		err = dt.ColorOutEdges.Add(int32(e.Src), e)
+		if err != nil {
+			return err
+		}
+		err = dt.ColorInEdges.Add(int32(e.Targ), e)
+		if err != nil {
+			return err
 		}
 	}
 
