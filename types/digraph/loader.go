@@ -22,6 +22,7 @@ import (
 	"github.com/timtadh/sfp/stores/bytes_bytes"
 	"github.com/timtadh/sfp/stores/bytes_int"
 	"github.com/timtadh/sfp/stores/bytes_subgraph"
+	"github.com/timtadh/sfp/stores/int_edge"
 	"github.com/timtadh/sfp/stores/int_int"
 	"github.com/timtadh/sfp/stores/int_json"
 	"github.com/timtadh/sfp/types/digraph/ext"
@@ -53,6 +54,8 @@ type Digraph struct {
 	CanonKids                bytes_bytes.MultiMap
 	CanonKidCount            bytes_int.MultiMap
 	ColorMap                 int_int.MultiMap
+	ColorInEdges            int_edge.MultiMap
+	ColorOutEdges           int_edge.MultiMap
 	config                   *config.Config
 	search                   bool
 }
@@ -90,6 +93,14 @@ func NewDigraph(config *config.Config, search bool, sup Supported, minE, maxE, m
 	if err != nil {
 		return nil, err
 	}
+	colorInEdges, err := config.IntEdgeMultiMap("digraph-color-in-edges")
+	if err != nil {
+		return nil, err
+	}
+	colorOutEdges, err := config.IntEdgeMultiMap("digraph-color-out-edges")
+	if err != nil {
+		return nil, err
+	}
 	g = &Digraph{
 		Supported:     sup,
 		Extender:      ext.NewExtender(runtime.NumCPU()),
@@ -105,6 +116,8 @@ func NewDigraph(config *config.Config, search bool, sup Supported, minE, maxE, m
 		CanonKids:     canonKids,
 		CanonKidCount: canonKidCount,
 		ColorMap:      colorMap,
+		ColorInEdges:  colorInEdges,
+		ColorOutEdges: colorOutEdges,
 		config:        config,
 		search:        search,
 	}
@@ -175,15 +188,17 @@ func (g *Digraph) TooLarge(node lattice.Node) bool {
 func (g *Digraph) Close() error {
 	g.config.AsyncTasks.Wait()
 	g.Extender.Stop()
+	g.NodeAttrs.Close()
+	g.Embeddings.Close()
 	g.Parents.Close()
 	g.ParentCount.Close()
 	g.Children.Close()
 	g.ChildCount.Close()
 	g.CanonKids.Close()
 	g.CanonKidCount.Close()
-	g.Embeddings.Close()
-	g.NodeAttrs.Close()
 	g.ColorMap.Close()
+	g.ColorInEdges.Close()
+	g.ColorOutEdges.Close()
 	return nil
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/timtadh/sfp/stores/bytes_float"
 	"github.com/timtadh/sfp/stores/bytes_int"
 	"github.com/timtadh/sfp/stores/bytes_subgraph"
+	"github.com/timtadh/sfp/stores/int_edge"
 	"github.com/timtadh/sfp/stores/int_int"
 	"github.com/timtadh/sfp/stores/int_json"
 	"github.com/timtadh/sfp/stores/ints_int"
@@ -90,6 +91,14 @@ func (c *Config) BytesIntMultiMap(name string) (bytes_int.MultiMap, error) {
 		return bytes_int.AnonBpTree()
 	} else {
 		return bytes_int.NewBpTree(c.CacheFile(name + ".bptree"))
+	}
+}
+
+func (c *Config) IntEdgeMultiMap(name string) (int_edge.MultiMap, error) {
+	if c.Cache == "" {
+		return int_edge.AnonBpTree()
+	} else {
+		return int_edge.NewBpTree(c.CacheFile(name + ".bptree"))
 	}
 }
 
