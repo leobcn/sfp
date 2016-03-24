@@ -66,6 +66,7 @@ func (b *Builder) Build() *SubGraph {
 		V:   make([]Vertex, len(b.V)),
 		E:   make([]Edge, len(b.E)),
 		Adj: make([][]int, len(b.V)),
+		Edges: make(map[Edge]bool, len(b.E)),
 	}
 	bMap := bliss.NewMap(len(b.V), len(b.E), b.V.Iterate(), b.E.Iterate())
 	vord, eord, _ := bMap.CanonicalPermutation()
@@ -80,6 +81,7 @@ func (b *Builder) Build() *SubGraph {
 		pat.E[j].Color = b.E[i].Color
 		pat.Adj[pat.E[j].Src] = append(pat.Adj[pat.E[j].Src], j)
 		pat.Adj[pat.E[j].Targ] = append(pat.Adj[pat.E[j].Targ], j)
+		pat.Edges[pat.E[j]] = true
 	}
 	return pat
 }

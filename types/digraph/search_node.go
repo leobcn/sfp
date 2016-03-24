@@ -52,8 +52,9 @@ func (n *SearchNode) dt() *Digraph {
 }
 
 func (n *SearchNode) Save() error {
-	_, err := n.Embeddings() // ensures that the label is in the embeddings table
-	return err
+	// _, err := n.Embeddings() // ensures that the label is in the embeddings table
+	// return err
+	return nil
 }
 
 func (n *SearchNode) SubGraph() *subgraph.SubGraph {

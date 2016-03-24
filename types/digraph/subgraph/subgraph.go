@@ -23,6 +23,7 @@ type SubGraph struct {
 	V   Vertices
 	E   Edges
 	Adj [][]int
+	Edges map[Edge]bool
 }
 
 type Vertices []Vertex
@@ -94,12 +95,14 @@ func FromEmbedding(sg *goiso.SubGraph) *SubGraph {
 			V:   make([]Vertex, 0),
 			E:   make([]Edge, 0),
 			Adj: make([][]int, 0),
+			Edges: make(map[Edge]bool),
 		}
 	}
 	pat := &SubGraph{
 		V:   make([]Vertex, len(sg.V)),
 		E:   make([]Edge, len(sg.E)),
 		Adj: make([][]int, len(sg.V)),
+		Edges: make(map[Edge]bool, len(sg.E)),
 	}
 	for i := range sg.V {
 		pat.V[i].Idx = i
@@ -112,6 +115,7 @@ func FromEmbedding(sg *goiso.SubGraph) *SubGraph {
 		pat.E[i].Color = sg.E[i].Color
 		pat.Adj[pat.E[i].Src] = append(pat.Adj[pat.E[i].Src], i)
 		pat.Adj[pat.E[i].Targ] = append(pat.Adj[pat.E[i].Targ], i)
+		pat.Edges[pat.E[i]] = true
 	}
 	return pat
 }
@@ -123,6 +127,11 @@ func FromLabel(label []byte) (*SubGraph, error) {
 		return nil, err
 	}
 	return sg, nil
+}
+
+func (sg *SubGraph) HasEdge(src, targ, color int) bool {
+	_, has := sg.Edges[Edge{Src:src, Targ:targ, Color:color}]
+	return has
 }
 
 func (sg *SubGraph) Embeddings(G *goiso.Graph, ColorMap int_int.MultiMap, extender *ext.Extender) ([]*goiso.SubGraph, error) {
@@ -411,6 +420,7 @@ func (sg *SubGraph) UnmarshalBinary(bytes []byte) error {
 	sg.V = make([]Vertex, lenV)
 	sg.E = make([]Edge, lenE)
 	sg.Adj = make([][]int, lenV)
+	sg.Edges = make(map[Edge]bool, lenE)
 	for i := 0; i < lenV; i++ {
 		s := off + i*4
 		e := s + 4
@@ -435,6 +445,7 @@ func (sg *SubGraph) UnmarshalBinary(bytes []byte) error {
 		sg.E[i].Color = color
 		sg.Adj[src] = append(sg.Adj[src], i)
 		sg.Adj[targ] = append(sg.Adj[targ], i)
+		sg.Edges[sg.E[i]] = true
 	}
 	return nil
 }
