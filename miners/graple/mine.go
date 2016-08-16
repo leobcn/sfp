@@ -1,11 +1,14 @@
 package graple
 
 import (
+	"runtime"
 	"math/rand"
+	"sync"
 )
 
 import (
 	"github.com/timtadh/data-structures/errors"
+	"github.com/timtadh/data-structures/pool"
 	"github.com/timtadh/matrix"
 )
 
@@ -155,18 +158,53 @@ func MakeAbsorbingWalk(sample func(lattice.Node) (lattice.Node, error), errs cha
 	return func(wlkr *walker.Walker) (chan lattice.Node, chan bool, chan error) {
 		samples := make(chan lattice.Node)
 		terminate := make(chan bool)
+		N := runtime.NumCPU()
+		pool := pool.New(N)
 		go func() {
 			for {
-				sampled, err := sample(wlkr.Dt.Root())
-				if err != nil {
-					errs <- err
-					break
+				var mu sync.RWMutex
+				done := false
+				for i := 0; i < N; i++ {
+					err := pool.Do(func() {
+						mu.RLock()
+						d := done
+						mu.RUnlock()
+						if d {
+							return
+						}
+						sampled, err := sample(wlkr.Dt.Root())
+						if err != nil {
+							errs <- err
+							mu.Lock()
+							done = true
+							mu.Unlock()
+							return
+						}
+						samples <- sampled
+						if <-terminate {
+							mu.Lock()
+							done = true
+							mu.Unlock()
+							return
+						}
+					})
+					if err != nil {
+						errs <- err
+						mu.Lock()
+						done = true
+						mu.Unlock()
+					}
 				}
-				samples <- sampled
-				if <-terminate {
+				pool.WaitLock()
+				mu.RLock()
+				d := done
+				mu.RUnlock()
+				pool.Unlock()
+				if d {
 					break
 				}
 			}
+			pool.Stop()
 			close(samples)
 			close(errs)
 		}()

@@ -37,7 +37,7 @@ func (w *Walker) PrFormatter() lattice.PrFormatter {
 }
 
 func (w *Walker) Init(dt lattice.DataType, rptr miners.Reporter) (err error) {
-	errors.Logf("INFO", "about to load singleton nodes")
+	// errors.Logf("INFO", "about to load singleton nodes")
 	w.Dt = dt
 	w.Rptr = rptr
 	return nil
@@ -65,7 +65,7 @@ func (w *Walker) Mine(dt lattice.DataType, rptr miners.Reporter, fmtr lattice.Fo
 	if err != nil {
 		return err
 	}
-	errors.Logf("INFO", "finished initialization, starting walk")
+	// errors.Logf("INFO", "finished initialization, starting walk")
 	samples, terminate, errs := w.Walk(w)
 	samples = w.RejectingWalk(samples, terminate)
 loop:
@@ -86,7 +86,7 @@ loop:
 			}
 		}
 	}
-	errors.Logf("INFO", "exiting walker Mine")
+	// errors.Logf("INFO", "exiting walker Mine")
 	return nil
 }
 

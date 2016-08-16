@@ -152,7 +152,7 @@ func digraphCommonAncestor(patterns []lattice.Pattern) (lattice.Pattern, error) 
 			maxPattern = p
 		}
 	}
-	errors.Logf("DEBUG", "ancestor %v", maxPattern)
+	// errors.Logf("DEBUG", "ancestor %v", maxPattern)
 
 	return maxPattern, nil
 }
