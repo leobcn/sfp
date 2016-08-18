@@ -3,23 +3,32 @@ package subgraph
 import (
 	"fmt"
 	// "math/rand"
+	"sort"
 	"strings"
+	"runtime"
 )
 
 import (
 	"github.com/timtadh/data-structures/errors"
-	"github.com/timtadh/data-structures/hashtable"
+//	"github.com/timtadh/data-structures/hashtable"
 	"github.com/timtadh/data-structures/heap"
-	"github.com/timtadh/data-structures/list"
+//	"github.com/timtadh/data-structures/list"
 	"github.com/timtadh/data-structures/set"
 	"github.com/timtadh/data-structures/types"
+	"github.com/timtadh/data-structures/pool"
 )
 
 import (
 // "github.com/timtadh/sfp/stats"
 )
 
-type EmbIterator func() (*Embedding, EmbIterator)
+var workers *pool.Pool
+
+func init() {
+	workers = pool.New(runtime.NumCPU())
+}
+
+// type EmbIterator func()(*Embedding, EmbIterator)
 
 func (sg *SubGraph) Embeddings(indices *Indices) ([]*Embedding, error) {
 	embeddings := make([]*Embedding, 0, 10)
@@ -35,11 +44,8 @@ func (sg *SubGraph) Embeddings(indices *Indices) ([]*Embedding, error) {
 }
 
 func (sg *SubGraph) DoEmbeddings(indices *Indices, do func(*Embedding) error) error {
-	ei, err := sg.IterEmbeddings(indices, nil, nil)
-	if err != nil {
-		return err
-	}
-	for emb, next := ei(); next != nil; emb, next = next() {
+	ei := sg.IterEmbeddings(indices, nil, nil)
+	for emb := ei.Next(); emb != nil; emb = ei.Next() {
 		err := do(emb)
 		if err != nil {
 			return err
@@ -48,34 +54,34 @@ func (sg *SubGraph) DoEmbeddings(indices *Indices, do func(*Embedding) error) er
 	return nil
 }
 
-func FilterAutomorphs(it EmbIterator, err error) (ei EmbIterator, _ error) {
-	if err != nil {
-		return nil, err
-	}
-	idSet := func(emb *Embedding) *list.Sorted {
-		ids := list.NewSorted(len(emb.Ids), true)
-		for _, id := range emb.Ids {
-			ids.Add(types.Int(id))
-		}
-		return ids
-	}
-	seen := hashtable.NewLinearHash()
-	ei = func() (emb *Embedding, _ EmbIterator) {
-		if it == nil {
-			return nil, nil
-		}
-		for emb, it = it(); it != nil; emb, it = it() {
-			ids := idSet(emb)
-			// errors.Logf("AUTOMORPH-DEBUG", "emb %v ids %v has %v", emb, ids, seen.Has(ids))
-			if !seen.Has(ids) {
-				seen.Put(ids, nil)
-				return emb, ei
-			}
-		}
-		return nil, nil
-	}
-	return ei, nil
-}
+// func FilterAutomorphs(it *EmbIterator, err error) (ei *EmbIterator, _ error) {
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	idSet := func(emb *Embedding) *list.Sorted {
+// 		ids := list.NewSorted(len(emb.Ids), true)
+// 		for _, id := range emb.Ids {
+// 			ids.Add(types.Int(id))
+// 		}
+// 		return ids
+// 	}
+// 	seen := hashtable.NewLinearHash()
+// 	ei = func() (emb *Embedding, _ EmbIterator) {
+// 		if it == nil {
+// 			return nil, nil
+// 		}
+// 		for emb, it = it(); it != nil; emb, it = it() {
+// 			ids := idSet(emb)
+// 			// errors.Logf("AUTOMORPH-DEBUG", "emb %v ids %v has %v", emb, ids, seen.Has(ids))
+// 			if !seen.Has(ids) {
+// 				seen.Put(ids, nil)
+// 				return emb, ei
+// 			}
+// 		}
+// 		return nil, nil
+// 	}
+// 	return ei, nil
+// }
 
 type IdNode struct {
 	Id   int
@@ -88,6 +94,15 @@ func (ids *IdNode) list(length int) []int {
 	for c := ids; c != nil; c = c.Prev {
 		l[c.Idx] = c.Id
 	}
+	return l
+}
+
+func (ids *IdNode) sorted(hint int) []int {
+	l := make([]int, 0, hint)
+	for c := ids; c != nil; c = c.Prev {
+		l = append(l, c.Id)
+	}
+	sort.Ints(l)
 	return l
 }
 
@@ -118,101 +133,116 @@ func (ids *IdNode) addOrReplace(id, idx int) *IdNode {
 	return &IdNode{Id: id, Idx: idx, Prev: ids}
 }
 
-func (sg *SubGraph) IterEmbeddings(indices *Indices, overlap []map[int]bool, prune func(*IdNode) bool) (ei EmbIterator, err error) {
-	type entry struct {
-		ids *IdNode
-		eid int
-	}
-	pop := func(stack []entry) (entry, []entry) {
-		return stack[len(stack)-1], stack[0 : len(stack)-1]
-	}
+type embSearchStackEntry struct {
+	ids *IdNode
+	eid int
+}
 
+type EmbIterator struct {
+	sg        *SubGraph
+	edgeChain []int
+	stack     []embSearchStackEntry
+	indices   *Indices
+	overlap   []map[int]bool
+	prune     func(*IdNode) bool
+}
+
+func (ei *EmbIterator) empty() bool {
+	return len(ei.stack) == 0
+}
+
+func (ei *EmbIterator) pop() (ids *IdNode, eid int) {
+	e := ei.stack[len(ei.stack)-1]
+	ei.stack = ei.stack[0 : len(ei.stack)-1]
+	return e.ids, e.eid
+}
+
+func (ei *EmbIterator) push(ids *IdNode, eid int) {
+	ei.stack = append(ei.stack, embSearchStackEntry{ids, eid})
+}
+
+func (sg *SubGraph) IterEmbeddings(indices *Indices, overlap []map[int]bool, prune func(*IdNode) bool) (ei *EmbIterator) {
 	if len(sg.V) == 0 {
-		ei = func() (*Embedding, EmbIterator) {
-			return nil, nil
-		}
-		return ei, nil
+		return &EmbIterator{}
 	}
-	// startIdx := sg.leastFrequentVertex(indices)
-	// startIdx := rand.Intn(len(sg.V))
-	// startIdx := sg.mostConnected()
-	// startIdx := sg.leastConnectedAndExts(indices)
 	startIdx := sg.leastExts(indices, overlap)
-	// startIdx := sg.mostExts(indices, overlap)
-	// startIdx := sg.mostCard(indices)
-	// startIdx := 0
-	// if len(sg.E) > 0 {
-	// 	// startIdx = 2
-	// 	errors.Logf("DEBUG", "overlap %v", overlap)
-	// 	errors.Logf("DEBUG", "startIdx %v adj %v exts %v freq %v label %v", startIdx, sg.Adj[startIdx], sg.extensionsFrom(indices, overlap, startIdx, -1), indices.G.ColorFrequency(sg.V[startIdx].Color), indices.G.Colors[sg.V[startIdx].Color])
-	// 	leastFr := sg.leastFrequentVertex(indices)
-	// 	errors.Logf("DEBUG", "leastFr %v adj %v exts %v freq %v label %v", leastFr, sg.Adj[leastFr], sg.extensionsFrom(indices, overlap, leastFr, -1), indices.G.ColorFrequency(sg.V[leastFr].Color), indices.G.Colors[sg.V[leastFr].Color])
-	// 	most := sg.mostConnected()
-	// 	errors.Logf("DEBUG", "most %v adj %v exts %v freq %v label %v", most, sg.Adj[most], sg.extensionsFrom(indices, overlap, most, -1), indices.G.ColorFrequency(sg.V[most].Color), indices.G.Colors[sg.V[most].Color])
-	// 	leastC := sg.leastConnected()[0]
-	// 	errors.Logf("DEBUG", "leastC %v adj %v exts %v freq %v label %v", leastC, sg.Adj[leastC], sg.extensionsFrom(indices, overlap, leastC, -1), indices.G.ColorFrequency(sg.V[leastC].Color), indices.G.Colors[sg.V[leastC].Color])
-	// }
-
-	chain := sg.edgeChain(indices, overlap, startIdx)
 	vembs := sg.startEmbeddings(indices, startIdx)
-
-	stack := make([]entry, 0, len(vembs)*2)
+	ei = &EmbIterator{
+		sg: sg,
+		edgeChain: sg.edgeChain(indices, overlap, startIdx),
+		stack: make([]embSearchStackEntry, 0, len(vembs)*2),
+		indices: indices,
+		overlap: overlap,
+		prune: prune,
+	}
 	for _, vemb := range vembs {
-		stack = append(stack, entry{vemb, 0})
+		ei.push(vemb, 0)
 	}
+	return ei
+}
 
-	type idxId struct {
-		idx, id int
-	}
-
-	ei = func() (*Embedding, EmbIterator) {
-		for len(stack) > 0 {
-			var i entry
-			i, stack = pop(stack)
-			if prune != nil && prune(i.ids) {
-				// errors.Logf("PRUNE", "ids %v", i.ids)
-				continue
-			}
-			// if len(sg.E) > 0 && i.eid < 9 {
-			// 	errors.Logf("DEBUG", "stack %v %v", len(stack), i.ids)
-			// }
-			// otherwise success we have an embedding we haven't seen
-			if i.eid >= len(chain) {
-				// check that this is the subgraph we sought
-				emb := &Embedding{
-					SG:  sg,
-					Ids: i.ids.list(len(sg.V)),
-				}
-				// if len(sg.E) > 0 {
-				// 	errors.Logf("FOUND-DEBUG", "ids %v", i.ids)
-				// }
-				// errors.Logf("FOUND", "\n  builder %v %v\n    built %v\n  pattern %v", i.emb.Builder, i.emb.Ids, emb, emb.SG)
-				if !emb.Exists(indices.G) {
-					errors.Logf("FOUND", "NOT EXISTS\n  builder %v\n    built %v\n  pattern %v", i.ids, emb, emb.SG)
-					panic("wat")
-				}
-				if sg.Equals(emb) {
-					// sweet we can yield this embedding!
-					// stack = clean(stack, prune)
-					return emb, ei
-				}
-				// nope wasn't an embedding drop it
-			} else {
-				// ok extend the embedding
-				// errors.Logf("DEBUG", "\n  extend %v %v %v", i.emb.Builder, i.emb.Ids, chain[i.eid])
-				size := len(stack)
-				sg.extendEmbedding(indices, i.ids, &sg.E[chain[i.eid]], overlap, func(ext *IdNode) {
-					stack = append(stack, entry{ext, i.eid + 1})
-				})
-				if size == len(stack) {
-					// errors.Logf("EMB-SEARCH", "stack, no change %v, dropping %v", len(stack), i.ids)
-				}
-				// errors.Logf("DEBUG", "stack len %v", len(stack))
-			}
+func (ei *EmbIterator) Next() (*Embedding) {
+	for !ei.empty() {
+		ids, eid := ei.pop()
+		// try the user supplied pruning function if we have one
+		if ei.prune != nil && ei.prune(ids) {
+			continue
 		}
-		return nil, nil
+		// otherwise success we have an embedding we haven't seen
+		if eid >= len(ei.edgeChain) {
+			// check that this is the subgraph we sought
+			emb := &Embedding{
+				SG:  ei.sg,
+				Ids: ids.list(len(ei.sg.V)),
+			}
+			if !emb.Exists(ei.indices.G) {
+				errors.Logf("FOUND", "NOT EXISTS\n  builder %v\n    built %v\n  pattern %v", ids, emb, emb.SG)
+				panic("wat")
+			}
+			if ei.sg.Equals(emb) {
+				// sweet we can yield this embedding!
+				return emb
+			} else {
+				// This embedding is invalid for this subgraph
+				// it is invalid for all supergraphs of this subgraph
+				// dropped = append(dropped, emb)
+			}
+		} else {
+			// ok extend the embedding
+			// size := len(ei.stack)
+			ei.sg.extendEmbedding(ei.indices, ids, &ei.sg.E[ei.edgeChain[eid]], ei.overlap, func(ext *IdNode) {
+				ei.push(ext, eid + 1)
+			})
+			// if size == len(ei.stack) {
+			// 	// This partial embedding is invalid for this subgraph
+			// 	// it may be valid for other supergraphs of this partial embedding
+			// 	// sg.partial(chain[:i.eid], i.ids)
+			// }
+		}
 	}
-	return ei, nil
+	return nil
+}
+
+func (sg *SubGraph) partial(edgeChain []int, ids *IdNode) *Embedding {
+	b := BuildEmbedding(len(sg.V), len(edgeChain))
+	vidxs := make(map[int]*Vertex)
+	addVertex := func(vidx, color, vid int) {
+		if _, has := vidxs[vidx]; !has {
+			vidxs[vidx] = b.AddVertex(color, vid)
+		} else {
+			panic("double add")
+		}
+	}
+	for c := ids; c != nil; c = c.Prev {
+		addVertex(c.Idx, sg.V[c.Idx].Color, c.Id)
+	}
+	for _, eid := range edgeChain {
+		s := sg.E[eid].Src
+		t := sg.E[eid].Targ
+		color := sg.E[eid].Color
+		b.AddEdge(vidxs[s], vidxs[t], color)
+	}
+	return b.Build()
 }
 
 func (sg *SubGraph) leastFrequentVertex(indices *Indices) int {

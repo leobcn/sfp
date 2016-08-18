@@ -114,16 +114,16 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 
 	// compute the embeddings
 	var seen map[int]bool = nil
-	var err error
-	var ei subgraph.EmbIterator
+	var ei *subgraph.EmbIterator
 	switch {
 	case mode&Automorphs == Automorphs:
-		ei, err = pattern.IterEmbeddings(dt.Indices, patternOverlap, nil)
+		ei = pattern.IterEmbeddings(dt.Indices, patternOverlap, nil)
 	case mode&NoAutomorphs == NoAutomorphs:
-		ei, err = subgraph.FilterAutomorphs(pattern.IterEmbeddings(dt.Indices, patternOverlap, nil))
+		// ei, err = subgraph.FilterAutomorphs(pattern.IterEmbeddings(dt.Indices, patternOverlap, nil))
+		panic("NoAutomorphs is disabled")
 	case mode&OptimisticPruning == OptimisticPruning:
 		seen = make(map[int]bool)
-		ei, err = pattern.IterEmbeddings(
+		ei = pattern.IterEmbeddings(
 			dt.Indices,
 			patternOverlap,
 			func(ids *subgraph.IdNode) bool {
@@ -136,9 +136,6 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 			})
 	default:
 		return 0, nil, nil, nil, errors.Errorf("Unknown mode %v", mode)
-	}
-	if err != nil {
-		return 0, nil, nil, nil, err
 	}
 
 	exts := set.NewSetMap(hashtable.NewLinearHash())
@@ -153,7 +150,7 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 	// add the supported embeddings to the vertex sets
 	// add the extensions to the extensions set
 	total := 0
-	for emb, next := ei(); next != nil; emb, next = next() {
+	for emb := ei.Next(); emb != nil; emb = ei.Next() {
 		for idx, id := range emb.Ids {
 			if seen != nil {
 				seen[id] = true
@@ -215,7 +212,7 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 		errors.Logf("CACHE-DEBUG", "Caching exts %v embs %v total-embs %v : %v", len(extensions), len(embeddings), total, pattern.Pretty(dt.G.Colors))
 	}
 	if !debug {
-		err = cacheExtsEmbs(dt, pattern, len(embeddings), extensions, embeddings, overlap)
+		err := cacheExtsEmbs(dt, pattern, len(embeddings), extensions, embeddings, overlap)
 		if err != nil {
 			return 0, nil, nil, nil, err
 		}
