@@ -4,6 +4,7 @@ import (
 	"fmt"
 	// "math/rand"
 	"sort"
+	"sync"
 	"strings"
 	"runtime"
 )
@@ -25,7 +26,7 @@ import (
 var workers *pool.Pool
 
 func init() {
-	workers = pool.New(runtime.NumCPU())
+	workers = pool.New(runtime.NumCPU()*2)
 }
 
 // type EmbIterator func()(*Embedding, EmbIterator)
@@ -139,6 +140,12 @@ type embSearchStackEntry struct {
 }
 
 type EmbIterator struct {
+	wg        sync.WaitGroup
+	mu        sync.RWMutex
+	wait      sync.Mutex
+	finishMu  sync.Mutex
+	finished  bool
+	output    chan *Embedding
 	sg        *SubGraph
 	edgeChain []int
 	stack     []embSearchStackEntry
@@ -148,17 +155,37 @@ type EmbIterator struct {
 }
 
 func (ei *EmbIterator) empty() bool {
-	return len(ei.stack) == 0
+	ei.mu.RLock()
+	r := len(ei.stack) == 0
+	ei.mu.RUnlock()
+	return r
 }
 
 func (ei *EmbIterator) pop() (ids *IdNode, eid int) {
+	ei.mu.Lock()
+	if len(ei.stack) == 0 {
+		ei.mu.Unlock()
+		return nil, 0
+	}
 	e := ei.stack[len(ei.stack)-1]
 	ei.stack = ei.stack[0 : len(ei.stack)-1]
+	ei.mu.Unlock()
 	return e.ids, e.eid
 }
 
 func (ei *EmbIterator) push(ids *IdNode, eid int) {
+	ei.mu.Lock()
 	ei.stack = append(ei.stack, embSearchStackEntry{ids, eid})
+	ei.mu.Unlock()
+}
+
+func (ei *EmbIterator) waitLock() {
+	ei.wait.Lock()
+	ei.wg.Wait()
+}
+
+func (ei *EmbIterator) waitUnlock() {
+	ei.wait.Unlock()
 }
 
 func (sg *SubGraph) IterEmbeddings(indices *Indices, overlap []map[int]bool, prune func(*IdNode) bool) (ei *EmbIterator) {
@@ -168,6 +195,7 @@ func (sg *SubGraph) IterEmbeddings(indices *Indices, overlap []map[int]bool, pru
 	startIdx := sg.leastExts(indices, overlap)
 	vembs := sg.startEmbeddings(indices, startIdx)
 	ei = &EmbIterator{
+		output: make(chan *Embedding, 100),
 		sg: sg,
 		edgeChain: sg.edgeChain(indices, overlap, startIdx),
 		stack: make([]embSearchStackEntry, 0, len(vembs)*2),
@@ -178,49 +206,122 @@ func (sg *SubGraph) IterEmbeddings(indices *Indices, overlap []map[int]bool, pru
 	for _, vemb := range vembs {
 		ei.push(vemb, 0)
 	}
+	// for i := 0; i < runtime.NumCPU()*0 + 8; i++ {
+	go ei.work()
+	// }
 	return ei
 }
 
-func (ei *EmbIterator) Next() (*Embedding) {
-	for !ei.empty() {
+func (ei *EmbIterator) Stop() {
+}
+
+func (ei *EmbIterator) Next() *Embedding {
+	return <-ei.output
+}
+
+func (ei *EmbIterator) finish() {
+	ei.finishMu.Lock()
+	if !ei.finished {
+		close(ei.output)
+		ei.finished = true
+	}
+	ei.finishMu.Unlock()
+}
+
+func (ei *EmbIterator) Lock() {
+	ei.mu.Lock()
+}
+
+func (ei *EmbIterator) Unlock() {
+	ei.mu.Unlock()
+}
+
+func (ei *EmbIterator) work() {
+	cond := sync.NewCond(&sync.Mutex{})
+	sched := 0
+	for {
 		ids, eid := ei.pop()
-		// try the user supplied pruning function if we have one
-		if ei.prune != nil && ei.prune(ids) {
-			continue
+	idcheck:
+		for ids == nil {
+			cond.L.Lock()
+			for sched > 0 {
+				cond.Wait()
+				cond.L.Unlock()
+				ids, eid = ei.pop()
+				if ids != nil {
+					break idcheck
+				}
+				cond.L.Lock()
+				
+			}
+			cond.L.Unlock()
+			if ei.empty() {
+				ei.finish()
+				return
+			}
+			ids, eid = ei.pop()
 		}
-		// otherwise success we have an embedding we haven't seen
-		if eid >= len(ei.edgeChain) {
-			// check that this is the subgraph we sought
-			emb := &Embedding{
-				SG:  ei.sg,
-				Ids: ids.list(len(ei.sg.V)),
+		cond.L.Lock()
+		sched += 1
+		cond.L.Unlock()
+		// ei.wg.Add(1)
+		err := workers.Do(func(ids *IdNode, eid int) func() {
+			return func() {
+				// errors.Logf("SCHED", "running %v %v", eid, ids)
+				defer func() {
+					cond.L.Lock()
+					sched -= 1
+					cond.L.Unlock()
+					cond.Signal()
+					// errors.Logf("WAIT", "wait-group %v", ei.wg)
+				}()
+				// try the user supplied pruning function if we have one
+				if ei.prune != nil {
+					ei.mu.Lock()
+					if ei.prune(ids) {
+						ei.mu.Unlock()
+						return
+					}
+					ei.mu.Unlock()
+				}
+				// otherwise success we have an embedding we haven't seen
+				if eid >= len(ei.edgeChain) {
+					// check that this is the subgraph we sought
+					emb := &Embedding{
+						SG:  ei.sg,
+						Ids: ids.list(len(ei.sg.V)),
+					}
+					if !emb.Exists(ei.indices.G) {
+						errors.Logf("FOUND", "NOT EXISTS\n  builder %v\n    built %v\n  pattern %v", ids, emb, emb.SG)
+						panic("wat")
+					}
+					if ei.sg.Equals(emb) {
+						// sweet we can yield this embedding!
+						ei.output<-emb
+					} else {
+						// This embedding is invalid for this subgraph
+						// it is invalid for all supergraphs of this subgraph
+						// dropped = append(dropped, emb)
+					}
+				} else {
+					// ok extend the embedding
+					// size := len(ei.stack)
+					ei.sg.extendEmbedding(ei.indices, ids, &ei.sg.E[ei.edgeChain[eid]], ei.overlap, func(ext *IdNode) {
+						ei.push(ext, eid + 1)
+						cond.Signal()
+					})
+					// if size == len(ei.stack) {
+					// 	// This partial embedding is invalid for this subgraph
+					// 	// it may be valid for other supergraphs of this partial embedding
+					// 	// sg.partial(chain[:i.eid], i.ids)
+					// }
+				}
 			}
-			if !emb.Exists(ei.indices.G) {
-				errors.Logf("FOUND", "NOT EXISTS\n  builder %v\n    built %v\n  pattern %v", ids, emb, emb.SG)
-				panic("wat")
-			}
-			if ei.sg.Equals(emb) {
-				// sweet we can yield this embedding!
-				return emb
-			} else {
-				// This embedding is invalid for this subgraph
-				// it is invalid for all supergraphs of this subgraph
-				// dropped = append(dropped, emb)
-			}
-		} else {
-			// ok extend the embedding
-			// size := len(ei.stack)
-			ei.sg.extendEmbedding(ei.indices, ids, &ei.sg.E[ei.edgeChain[eid]], ei.overlap, func(ext *IdNode) {
-				ei.push(ext, eid + 1)
-			})
-			// if size == len(ei.stack) {
-			// 	// This partial embedding is invalid for this subgraph
-			// 	// it may be valid for other supergraphs of this partial embedding
-			// 	// sg.partial(chain[:i.eid], i.ids)
-			// }
+		}(ids, eid))
+		if err != nil {
+			panic(err)
 		}
 	}
-	return nil
 }
 
 func (sg *SubGraph) partial(edgeChain []int, ids *IdNode) *Embedding {

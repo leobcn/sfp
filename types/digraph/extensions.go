@@ -153,7 +153,9 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 	for emb := ei.Next(); emb != nil; emb = ei.Next() {
 		for idx, id := range emb.Ids {
 			if seen != nil {
+				ei.Lock()
 				seen[id] = true
+				ei.Unlock()
 			}
 			if sets[idx] == nil {
 				sets[idx] = hashtable.NewLinearHash()
