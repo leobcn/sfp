@@ -127,6 +127,11 @@ func (i *ItemSets) Root() lattice.Node {
 	return i.empty
 }
 
+func (i *ItemSets) SupportedAt(x lattice.Pattern, at int) (bool, error) {
+	_ = x.(*Pattern)
+	panic("unfinished")
+}
+
 func (i *ItemSets) Acceptable(node lattice.Node) bool {
 	n := node.(*Node)
 	items := n.pat.Items.Size()

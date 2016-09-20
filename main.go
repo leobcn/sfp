@@ -119,7 +119,7 @@ Modes
 `
 }
 
-func grapleMode(argv []string, conf *config.Config) (miners.Miner, []string) {
+func grapleMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
 		"hc",
@@ -143,7 +143,7 @@ func grapleMode(argv []string, conf *config.Config) (miners.Miner, []string) {
 	return graple.NewWalker(conf), args
 }
 
-func fastmaxMode(argv []string, conf *config.Config) (miners.Miner, []string) {
+func fastmaxMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
 		"h",
@@ -167,7 +167,7 @@ func fastmaxMode(argv []string, conf *config.Config) (miners.Miner, []string) {
 	return fastmax.NewWalker(conf), args
 }
 
-func uniproxMode(argv []string, conf *config.Config) (miners.Miner, []string) {
+func uniproxMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
 		"hw:",
@@ -203,7 +203,7 @@ func uniproxMode(argv []string, conf *config.Config) (miners.Miner, []string) {
 	return miner, args
 }
 
-func muskMode(argv []string, conf *config.Config) (miners.Miner, []string) {
+func muskMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
 		"h",
@@ -228,7 +228,7 @@ func muskMode(argv []string, conf *config.Config) (miners.Miner, []string) {
 	return miner, args
 }
 
-func premuskMode(argv []string, conf *config.Config) (miners.Miner, []string) {
+func premuskMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
 		"h",
@@ -257,7 +257,7 @@ func premuskMode(argv []string, conf *config.Config) (miners.Miner, []string) {
 	return miner, args
 }
 
-func ospaceMode(argv []string, conf *config.Config) (miners.Miner, []string) {
+func ospaceMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
 		"h",

@@ -28,6 +28,7 @@ type DataType interface {
 	Acceptable(Node) bool
 	TooLarge(Node) bool
 	Close() error
+	SupportedAt(Pattern, int) (bool, error)
 }
 
 type Node interface {

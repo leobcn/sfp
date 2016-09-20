@@ -1,6 +1,8 @@
 package digraph
 
-import ()
+import (
+	"fmt"
+)
 
 import (
 	"github.com/timtadh/data-structures/errors"
@@ -85,7 +87,8 @@ func validExtChecker(dt *Digraph, do func(*subgraph.Embedding, *subgraph.Extensi
 	}
 }
 
-func extensionsFromEmbeddings(dt *Digraph, pattern *subgraph.SubGraph, ei subgraph.EmbIterator, seen map[int]bool) (total int, overlap []map[int]bool, fisEmbs []*subgraph.Embedding, sets []*hashtable.LinearHash, exts types.Set) {
+func extensionsFromEmbeddings(dt *Digraph, pattern *subgraph.SubGraph, ei subgraph.EmbIterator) (total int, overlap []map[int]bool, fisEmbs []*subgraph.Embedding, sets []*hashtable.LinearHash, exts types.Set) {
+	var seen map[int]bool
 	if dt.Mode&FIS == FIS {
 		seen = make(map[int]bool)
 		fisEmbs = make([]*subgraph.Embedding, 0, 10)
@@ -140,7 +143,8 @@ func extensionsFromEmbeddings(dt *Digraph, pattern *subgraph.SubGraph, ei subgra
 	return total, overlap, fisEmbs, sets, exts
 }
 
-func extensionsFromFreqEdges(dt *Digraph, pattern *subgraph.SubGraph, ei subgraph.EmbIterator, seen map[int]bool) (total int, overlap []map[int]bool, fisEmbs []*subgraph.Embedding, sets []*hashtable.LinearHash, exts types.Set) {
+func extensionsFromFreqEdges(dt *Digraph, pattern *subgraph.SubGraph, ei subgraph.EmbIterator) (total int, overlap []map[int]bool, fisEmbs []*subgraph.Embedding, sets []*hashtable.LinearHash, exts types.Set) {
+	var seen map[int]bool
 	if dt.Mode&FIS == FIS {
 		seen = make(map[int]bool)
 		fisEmbs = make([]*subgraph.Embedding, 0, 10)
@@ -241,6 +245,23 @@ func extensionsFromFreqEdges(dt *Digraph, pattern *subgraph.SubGraph, ei subgrap
 	return total, overlap, fisEmbs, sets, <-done
 }
 
+func embeddingIterator(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[int]bool, unsupEmbs map[subgraph.VrtEmb]bool) (ei subgraph.EmbIterator, dropped *subgraph.VertexEmbeddings) {
+	mode := dt.Mode
+	switch {
+	case mode&(MNI|FIS) != 0:
+		return pattern.IterEmbeddings(
+			dt.EmbSearchStartPoint, dt.Indices, unsupEmbs, patternOverlap, nil)
+	case mode&(GIS) == GIS:
+		return pattern.GIS_Pruning(
+			dt.EmbSearchStartPoint,
+			dt.Indices,
+			unsupEmbs,
+			patternOverlap)
+	default:
+		panic(fmt.Errorf("Unknown support counting strategy %v", mode))
+	}
+}
+
 // unique extensions and supported embeddings
 func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[int]bool, unsupExts types.Set, unsupEmbs map[subgraph.VrtEmb]bool, mode Mode, debug bool) (int, []*subgraph.Extension, []*subgraph.Embedding, []map[int]bool, subgraph.VertexEmbeddings, error) {
 	if !debug {
@@ -258,34 +279,9 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 	}
 
 	// compute the embeddings
-	var seen map[int]bool = nil
 	var ei subgraph.EmbIterator
 	var dropped *subgraph.VertexEmbeddings
-	switch {
-	case mode&(MNI|FIS) != 0:
-		ei, dropped = pattern.IterEmbeddings(
-			dt.EmbSearchStartPoint, dt.Indices, unsupEmbs, patternOverlap, nil)
-	case mode&(GIS) == GIS:
-		seen = make(map[int]bool)
-		ei, dropped = pattern.IterEmbeddings(
-			dt.EmbSearchStartPoint,
-			dt.Indices,
-			unsupEmbs,
-			patternOverlap,
-			func(ids *subgraph.IdNode) bool {
-				for c := ids; c != nil; c = c.Prev {
-					if _, has := seen[c.Id]; has {
-						for c := ids; c != nil; c = c.Prev {
-							seen[c.Id] = true
-						}
-						return true
-					}
-				}
-				return false
-			})
-	default:
-		return 0, nil, nil, nil, nil, errors.Errorf("Unknown support counting strategy %v", mode)
-	}
+	ei, dropped = embeddingIterator(dt, pattern, patternOverlap, unsupEmbs)
 
 	// find the actual embeddings and compute the extensions
 	// the extensions are stored in exts
@@ -298,15 +294,15 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 	if mode&ExtFromEmb == ExtFromEmb && len(pattern.E) > 0 {
 		// add the supported embeddings to the vertex sets
 		// add the extensions to the extensions set
-		total, overlap, fisEmbs, sets, exts = extensionsFromEmbeddings(dt, pattern, ei, seen)
+		total, overlap, fisEmbs, sets, exts = extensionsFromEmbeddings(dt, pattern, ei)
 		if total == 0 {
 			// return 0, nil, nil, nil, nil, errors.Errorf("could not find any embedding of %v", pattern)
 			// because we are extending from frequent edges for vertices this
 			// is ok.
 			return 0, nil, nil, nil, nil, nil
 		}
-	} else if mode&ExtFromFreqEdges == ExtFromFreqEdges || len(pattern.E) <= 0 {
-		total, overlap, fisEmbs, sets, exts = extensionsFromFreqEdges(dt, pattern, ei, seen)
+	} else if mode&ExtFromFreqEdges == ExtFromFreqEdges {
+		total, overlap, fisEmbs, sets, exts = extensionsFromFreqEdges(dt, pattern, ei)
 		if total < dt.Support() {
 			return 0, nil, nil, nil, nil, nil
 		}

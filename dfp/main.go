@@ -37,21 +37,21 @@ import (
 )
 
 import (
-	"github.com/timtadh/sfp/afp/miners/dfs"
-	"github.com/timtadh/sfp/afp/miners/qsplor"
-	"github.com/timtadh/sfp/afp/miners/vsigram"
+	"github.com/timtadh/sfp/dfp/miners/urw"
 	"github.com/timtadh/sfp/cmd"
 	"github.com/timtadh/sfp/config"
 	"github.com/timtadh/sfp/miners"
+	"github.com/timtadh/sfp/lattice"
 )
 
 func init() {
 	cmd.UsageMessage = "afp --help"
 	cmd.ExtendedMessage = `
-afp - find all frequent patterns
+dfp - find discriminative frequent patterns
 
-$ afp -o <path> [Global Options] \
-    <type> [Type Options] <input-path> \
+$ dfp -o <path> [Global Options] \
+    pos <type> [Type Options] <input-path> \
+    neg <type> [Type Options] <input-path> \
     <mode> [Mode Options] \
     [<reporter> [Reporter Options]]
 
@@ -77,7 +77,8 @@ Global Options
     -p, --parallelism=<int>   Parallelism level to use. Defaults to
                               the number of CPU cores you have. Set to
                               0 to turn off parallelism.
-    --support=<int>           minimum support of patterns (required)
+    --min-pos-support=<int>   minimum pos support of patterns (required)
+    --max-neg-support=<int>   maximum neg support of patterns (required)
     --skip-log=<level>        don't output the given log level.
 
 Developer Options
@@ -92,97 +93,38 @@ Developer Options
         -a, after=<int>       collect after n samples collected (default 0)
 
 Modes
-    dfs                       depth first search of the lattice
-    vsigram                   dfs but only on the canonical edges
+    urw                       depth first search of the lattice
 `
 }
 
-func vsigramMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
-	args, optargs, err := getopt.GetOpt(
-		argv,
-		"hc",
-		[]string{
-			"help",
-		},
-	)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		cmd.Usage(cmd.ErrorCodes["opts"])
-	}
-	for _, oa := range optargs {
-		switch oa.Opt() {
-		case "-h", "--help":
-			cmd.Usage(0)
-		default:
-			fmt.Fprintf(os.Stderr, "Unknown flag '%v'\n", oa.Opt())
-			cmd.Usage(cmd.ErrorCodes["opts"])
-		}
-	}
-	return vsigram.NewMiner(conf), args
-}
+type Mode func(argv []string, conf *config.Config, negLat func(lattice.PrFormatter) (lattice.DataType, lattice.Formatter), minPosSupport, maxNegSupport int) (miners.Miner, []string)
 
-func dfsMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
+func urwMode(argv []string, conf *config.Config, negLat func(lattice.PrFormatter) (lattice.DataType, lattice.Formatter), minPosSupport, maxNegSupport int) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
-		"hc",
+		"hs:",
 		[]string{
 			"help",
+			"samples=",
 		},
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		cmd.Usage(cmd.ErrorCodes["opts"])
 	}
+	samples := 1
 	for _, oa := range optargs {
 		switch oa.Opt() {
 		case "-h", "--help":
 			cmd.Usage(0)
+		case "-s", "--samples":
+			samples = cmd.ParseInt(oa.Arg())
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown flag '%v'\n", oa.Opt())
 			cmd.Usage(cmd.ErrorCodes["opts"])
 		}
 	}
-	return dfs.NewMiner(conf), args
-}
-
-func qsplorMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
-	args, optargs, err := getopt.GetOpt(
-		argv,
-		"hs:m:",
-		[]string{
-			"help",
-			"score-function=",
-			"max-queue-size=",
-		},
-	)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		cmd.Usage(cmd.ErrorCodes["opts"])
-	}
-	var scorer qsplor.Scorer = qsplor.Scorers["random"]
-	var maxQueueSize int = 10
-	for _, oa := range optargs {
-		switch oa.Opt() {
-		case "-h", "--help":
-			cmd.Usage(0)
-		case "-m", "--max-queue-size":
-			maxQueueSize = cmd.ParseInt(oa.Arg())
-		case "-s", "--score-function":
-			if _, has := qsplor.Scorers[oa.Arg()]; !has {
-				fmt.Fprintf(os.Stderr, "Unknown score function: %v\n", oa.Arg())
-				fmt.Fprintf(os.Stderr, "Valid score functions:\n")
-				for name, _ := range qsplor.Scorers {
-					fmt.Fprintf(os.Stderr, "%v\n", name)
-				}
-				cmd.Usage(cmd.ErrorCodes["opts"])
-			}
-			scorer = qsplor.Scorers[oa.Arg()]
-		default:
-			fmt.Fprintf(os.Stderr, "Unknown flag '%v'\n", oa.Opt())
-			cmd.Usage(cmd.ErrorCodes["opts"])
-		}
-	}
-	return qsplor.NewMiner(conf, scorer, maxQueueSize), args
+	return urw.NewMiner(conf, samples, minPosSupport, maxNegSupport, negLat), args
 }
 
 func main() {
@@ -193,10 +135,8 @@ func main() {
 }
 
 func run() int {
-	modes := map[string]cmd.Mode{
-		"dfs":     dfsMode,
-		"vsigram": vsigramMode,
-		"qsplor":  qsplorMode,
+	modes := map[string]Mode{
+		"urw":     urwMode,
 	}
 
 	args, optargs, err := getopt.GetOpt(
@@ -205,7 +145,8 @@ func run() int {
 		[]string{
 			"help",
 			"output=", "cache=",
-			"support=",
+			"min-pos-support=",
+			"max-neg-support=",
 			"modes", "types", "reporters",
 			"skip-log=",
 			"cpu-profile=",
@@ -221,7 +162,8 @@ func run() int {
 
 	output := ""
 	cache := ""
-	support := 0
+	minPosSupport := 0
+	maxNegSupport := 0
 	cpuProfile := ""
 	parallelism := -1
 	for _, oa := range optargs {
@@ -234,8 +176,10 @@ func run() int {
 			cache = cmd.EmptyDir(oa.Arg())
 		case "-p", "--parallelism":
 			parallelism = cmd.ParseInt(oa.Arg())
-		case "--support":
-			support = cmd.ParseInt(oa.Arg())
+		case "--min-pos-support":
+			minPosSupport = cmd.ParseInt(oa.Arg())
+		case "--max-neg-support":
+			maxNegSupport = cmd.ParseInt(oa.Arg())
 		case "--types":
 			fmt.Fprintln(os.Stderr, "Types:")
 			for k := range cmd.Types {
@@ -266,8 +210,13 @@ func run() int {
 		}
 	}
 
-	if support <= 0 {
-		fmt.Fprintf(os.Stderr, "Support <= 0, must be > 0\n")
+	if minPosSupport <= 0 {
+		fmt.Fprintf(os.Stderr, "--min-pos-support <= 0, must be > 0\n")
+		cmd.Usage(cmd.ErrorCodes["opts"])
+	}
+
+	if maxNegSupport <= 0 {
+		fmt.Fprintf(os.Stderr, "--max-neg-support <= 0, must be > 0\n")
 		cmd.Usage(cmd.ErrorCodes["opts"])
 	}
 
@@ -283,11 +232,59 @@ func run() int {
 	conf := &config.Config{
 		Cache:   cache,
 		Output:  output,
-		Support: support,
+		Support: minPosSupport,
 		Parallelism: parallelism,
 	}
 
-	return cmd.Main(args, conf, modes)
+	return Main(args, conf, modes, minPosSupport, maxNegSupport)
+}
+
+func Main(args []string, conf *config.Config, modes map[string]Mode, minPosSupport, maxNegSupport int) int {
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "You must supply a type and a mode\n")
+		cmd.Usage(cmd.ErrorCodes["opts"])
+	}
+
+	errors.Logf("INFO", "args: %v", os.Args)
+	if len(args) == 0 || args[0] != "pos" {
+		fmt.Fprintf(os.Stderr, "Expected pos\n")
+		cmd.Usage(cmd.ErrorCodes["opts"])
+	} else {
+		args = args[1:]
+	}
+	loadPos, args := cmd.ParseType(args, conf)
+	if len(args) == 0 || args[0] != "neg" {
+		fmt.Fprintf(os.Stderr, "Expected pos\n")
+		cmd.Usage(cmd.ErrorCodes["opts"])
+	} else {
+		args = args[1:]
+	}
+	loadNeg, args := cmd.ParseType(args, conf)
+	mode, args := ParseMode(args, conf, modes, loadNeg, minPosSupport, maxNegSupport)
+	pos, fmtr := loadPos(mode.PrFormatter())
+	rptr, args := cmd.ParseReporter(args, conf, fmtr)
+
+	if len(args) != 0 {
+		fmt.Fprintf(os.Stderr, "unconsumed commandline options: '%v'\n", strings.Join(args, " "))
+		cmd.Usage(cmd.ErrorCodes["opts"])
+	}
+
+	return cmd.Run(pos, fmtr, mode, rptr)
+}
+
+func ParseMode(args []string, conf *config.Config, modes map[string]Mode, negLat func(lattice.PrFormatter) (lattice.DataType, lattice.Formatter), minPosSupport, maxNegSupport int) (miners.Miner, []string) {
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "You must supply a mode\n")
+		cmd.Usage(cmd.ErrorCodes["opts"])
+	} else if _, has := modes[args[0]]; !has {
+		fmt.Fprintf(os.Stderr, "Unknown mining mode '%v'\n", args[0])
+		fmt.Fprintln(os.Stderr, "Modes:")
+		for k := range modes {
+			fmt.Fprintln(os.Stderr, "  ", k)
+		}
+		cmd.Usage(cmd.ErrorCodes["opts"])
+	}
+	return modes[args[0]](args[1:], conf, negLat, minPosSupport, maxNegSupport)
 }
 
 var profileDone chan bool

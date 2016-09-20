@@ -1296,7 +1296,7 @@ var Reporters map[string]Reporter = map[string]Reporter{
 	"heap-profile": heapProfileReporter,
 }
 
-type Mode func(argv []string, conf *config.Config) (miners.Miner, []string)
+type Mode func(argv []string, conf *config.Config, extra ...interface{}) (miners.Miner, []string)
 
 func ParseType(args []string, conf *config.Config) (func(lattice.PrFormatter) (lattice.DataType, lattice.Formatter), []string) {
 	if len(args) < 1 {
