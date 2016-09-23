@@ -220,7 +220,7 @@ func (sg *SubGraph) searchStartingPoint(mode EmbSearchStartPoint, indices *digra
 	}
 }
 
-func (sg *SubGraph) GIS_Pruning(spMode EmbSearchStartPoint, indices *Indices, prunePoints map[VrtEmb]bool, overlap []map[int]bool) (ei EmbIterator, unsup *VertexEmbeddings) {
+func (sg *SubGraph) GIS_Pruning(spMode EmbSearchStartPoint, indices *digraph.Indices, prunePoints map[VrtEmb]bool, overlap []map[int]bool) (ei EmbIterator, unsup *VertexEmbeddings) {
 	seen := make(map[int]bool)
 	it, dropped := sg.IterEmbeddings(
 		spMode,

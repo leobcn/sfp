@@ -291,7 +291,7 @@ func ExtsAndEmbs(dt *Digraph, pattern *subgraph.SubGraph, patternOverlap []map[i
 	var sets []*hashtable.LinearHash
 	var overlap []map[int]bool
 	var total int
-	if mode&ExtFromEmb == ExtFromEmb && len(pattern.E) > 0 {
+	if mode&ExtFromEmb == ExtFromEmb {
 		// add the supported embeddings to the vertex sets
 		// add the extensions to the extensions set
 		total, overlap, fisEmbs, sets, exts = extensionsFromEmbeddings(dt, pattern, ei)
