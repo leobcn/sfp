@@ -8,8 +8,6 @@ import (
 
 import (
 	"github.com/timtadh/data-structures/errors"
-	"github.com/timtadh/data-structures/hashtable"
-	"github.com/timtadh/data-structures/types"
 	"github.com/timtadh/data-structures/pool"
 )
 
@@ -207,49 +205,55 @@ func (g *Digraph) Root() lattice.Node {
 func (g *Digraph) SupportedAt(x lattice.Pattern, at int) (bool, error) {
 	sg := x.(*SubgraphPattern).Pat
 	ei, _ := embeddingIterator(g, sg, nil, nil)
-	count := 0
-	var seen map[int]bool
-	var sets []*hashtable.LinearHash
-	if g.Mode&(GIS|FIS) != 0  {
-		seen = make(map[int]bool)
-	} else if g.Mode&MNI == MNI {
-		sets = make([]*hashtable.LinearHash, len(sg.V))
-	}
+	// count := 0
+	// var seen map[int]bool
+	// var sets []*hashtable.LinearHash
+	// if g.Mode&(GIS|FIS) != 0  {
+	// 	seen = make(map[int]bool)
+	// } else if g.Mode&MNI == MNI {
+	// 	sets = make([]*hashtable.LinearHash, len(sg.V))
+	// }
+	errors.Logf("DEBUG", "checking %v", sg)
 	stop := false
-	for emb, ei := ei(stop); ei != nil; emb, ei = ei(stop) {
-		min := -1
-		seenIt := false
-		for idx, id := range emb.Ids {
-			if seen != nil {
-				if seen[id] {
-					seenIt = true
-				}
-				seen[id] = true
-			}
-			if sets != nil {
-				if sets[idx] == nil {
-					sets[idx] = hashtable.NewLinearHash()
-				}
-				set := sets[idx]
-				if !set.Has(types.Int(id)) {
-					set.Put(types.Int(id), emb)
-				}
-				size := set.Size()
-				if min == -1 || size < min {
-					min = size
-				}
-			}
-		}
-		if !seenIt {
-			count++
-			if count >= at {
-				stop = true
-			}
-		}
-		if min >= at {
-			stop = true
-		}
+	for _, ei = ei(stop); ei != nil; _, ei = ei(stop) {
+		errors.Logf("DEBUG", "found %v", sg)
+		return true, nil
 	}
+	// for emb, ei := ei(stop); ei != nil; emb, ei = ei(stop) {
+	// 	min := -1
+	// 	seenIt := false
+	// 	for idx, id := range emb.Ids {
+	// 		if seen != nil {
+	// 			if seen[id] {
+	// 				seenIt = true
+	// 			}
+	// 			seen[id] = true
+	// 		}
+	// 		if sets != nil {
+	// 			if sets[idx] == nil {
+	// 				sets[idx] = hashtable.NewLinearHash()
+	// 			}
+	// 			set := sets[idx]
+	// 			if !set.Has(types.Int(id)) {
+	// 				set.Put(types.Int(id), emb)
+	// 			}
+	// 			size := set.Size()
+	// 			if min == -1 || size < min {
+	// 				min = size
+	// 			}
+	// 		}
+	// 	}
+	// 	stop = true
+	// 	if !seenIt {
+	// 		count++
+	// 		if count >= at {
+	// 			stop = true
+	// 		}
+	// 	}
+	// 	if min >= at {
+	// 		stop = true
+	// 	}
+	// }
 	return stop, nil
 }
 

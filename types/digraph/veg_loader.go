@@ -160,6 +160,7 @@ func graphSize(input lattice.Input) (V, E int, err error) {
 	in, closer := input()
 	defer closer()
 	err = processLines(in, func(line []byte) {
+		errors.Logf("DEBUG", "line %v", string(line))
 		if bytes.HasPrefix(line, []byte("vertex")) {
 			V++
 		} else if bytes.HasPrefix(line, []byte("edge")) {

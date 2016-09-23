@@ -42,6 +42,7 @@ import (
 	"github.com/timtadh/sfp/config"
 	"github.com/timtadh/sfp/miners"
 	"github.com/timtadh/sfp/lattice"
+	"github.com/timtadh/sfp/types/digraph"
 )
 
 func init() {
@@ -50,8 +51,7 @@ func init() {
 dfp - find discriminative frequent patterns
 
 $ dfp -o <path> [Global Options] \
-    pos <type> [Type Options] <input-path> \
-    neg <type> [Type Options] <input-path> \
+    <type> [Type Options] <pos-input-path> <neg-input-path> \
     <mode> [Mode Options] \
     [<reporter> [Reporter Options]]
 
@@ -246,22 +246,35 @@ func Main(args []string, conf *config.Config, modes map[string]Mode, minPosSuppo
 	}
 
 	errors.Logf("INFO", "args: %v", os.Args)
-	if len(args) == 0 || args[0] != "pos" {
-		fmt.Fprintf(os.Stderr, "Expected pos\n")
-		cmd.Usage(cmd.ErrorCodes["opts"])
-	} else {
-		args = args[1:]
-	}
 	loadPos, args := cmd.ParseType(args, conf)
-	if len(args) == 0 || args[0] != "neg" {
-		fmt.Fprintf(os.Stderr, "Expected pos\n")
-		cmd.Usage(cmd.ErrorCodes["opts"])
-	} else {
-		args = args[1:]
+	negInputPath := cmd.AssertFileOrDirExists(args[0])
+	args = args[1:]
+	getNegInput := func() (io.Reader, func()) {
+		errors.Logf("DEBUG", "neg path %v", negInputPath)
+		return cmd.Input(negInputPath)
 	}
-	loadNeg, args := cmd.ParseType(args, conf)
+	pos, fmtr := loadPos(nil)
+	labels := pos.(*digraph.Digraph).Labels
+	dc := &pos.(*digraph.Digraph).Config
+	loadNeg := func(prfmtr lattice.PrFormatter) (lattice.DataType, lattice.Formatter) {
+		c := conf.Copy()
+		c.Support = 1
+		loader, err := digraph.NewDotLoader(conf, dc)
+		if err != nil {
+			panic(err)
+		}
+		errors.Logf("INFO", "Got configuration about to load dataset")
+		dt, err := loader.(*digraph.DotLoader).LoadWithLabels(getNegInput, labels)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "There was error during the loading process\n")
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		errors.Logf("DEBUG", "loaded neg %v" ,dt)
+		fmtr := digraph.NewFormatter(dt.(*digraph.Digraph), prfmtr)
+		return dt, fmtr
+	}
 	mode, args := ParseMode(args, conf, modes, loadNeg, minPosSupport, maxNegSupport)
-	pos, fmtr := loadPos(mode.PrFormatter())
 	rptr, args := cmd.ParseReporter(args, conf, fmtr)
 
 	if len(args) != 0 {
