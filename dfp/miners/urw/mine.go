@@ -84,6 +84,7 @@ func (m *Miner) mine() (err error) {
 		cur := m.Pos.Root()
 		prev := cur
 		for cur != nil {
+			errors.Logf("DEBUG", "cur %v", cur)
 			prev = cur
 			cur, err = uniform(m.filterNegs(cur.Children()))
 			if err != nil {
@@ -105,15 +106,22 @@ func (m *Miner) filterNegs(slice []lattice.Node, err error) ([]lattice.Node, err
 	filtered := make([]lattice.Node, 0, len(slice))
 	count := 0
 	for _, n := range slice {
-		negSupported, err := m.Neg.SupportedAt(n.Pattern(), m.MaxNegSupport)
+		pat := n.Pattern()
+		m.Pos.SupportOf(pat)
+		size, support, err := m.Neg.SupportOf(pat)
 		if err != nil {
 			return nil, err
 		}
-		if negSupported {
-			continue
+		// errors.Logf("DEBUG", "%v %v of pat %v", size, support, pat)
+		if float64(size)/float64(pat.Level()) >= .7 && pat.Level() > 1 {
+			// skip it
+		} else if float64(size)/float64(pat.Level()) <= 0 {
+			filtered = append(filtered, n)
+			count++
+		} else if support <= m.MaxNegSupport {
+			filtered = append(filtered, n)
+			count++
 		}
-		filtered = append(filtered, n)
-		count++
 	}
 	// errors.Logf("DEBUG", "fitered %v from %v : %v", len(filtered), len(slice), count)
 	return filtered, nil

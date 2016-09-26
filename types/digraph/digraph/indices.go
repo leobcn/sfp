@@ -40,11 +40,12 @@ func NewIndices(b *Builder, minSupport int) *Indices {
 		VertexColors:   b.VertexColors,
 		EdgeColors:     b.EdgeColors,
 	}
+	errors.Logf("DEBUG", "building indices")
 	i.G = b.Build(
 		func(u *Vertex) {
-			if b.VertexColors[u.Color] < minSupport {
-				return
-			}
+			// if minSupport > 1 && b.VertexColors[u.Color] < minSupport {
+			// 	return
+			// }
 			if i.ColorIndex[u.Color] == nil {
 				i.ColorIndex[u.Color] = make([]int, 0, b.VertexColors[u.Color])
 			}

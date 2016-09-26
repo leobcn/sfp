@@ -247,7 +247,7 @@ func run() int {
 			// fmt.Printf("%v, %v, %v\n", i+1, match, pattern)
 			total += match
 			totalEdges += float64(len(sg.E))
-			if visualize != nil {
+			if visualize != nil && len(csg.E) < len(sg.E) {
 				dotty, err := csg.VisualizeEmbedding(sg.AsIndices(), graph.Labels)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "There was error visualizing the embedding '%v'\n", csg)

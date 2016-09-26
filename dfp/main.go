@@ -215,8 +215,8 @@ func run() int {
 		cmd.Usage(cmd.ErrorCodes["opts"])
 	}
 
-	if maxNegSupport <= 0 {
-		fmt.Fprintf(os.Stderr, "--max-neg-support <= 0, must be > 0\n")
+	if maxNegSupport < 0 {
+		fmt.Fprintf(os.Stderr, "--max-neg-support  0, must be >= 0\n")
 		cmd.Usage(cmd.ErrorCodes["opts"])
 	}
 
@@ -258,7 +258,7 @@ func Main(args []string, conf *config.Config, modes map[string]Mode, minPosSuppo
 	dc := &pos.(*digraph.Digraph).Config
 	loadNeg := func(prfmtr lattice.PrFormatter) (lattice.DataType, lattice.Formatter) {
 		c := conf.Copy()
-		c.Support = 1
+		c.Support = 0
 		loader, err := digraph.NewDotLoader(conf, dc)
 		if err != nil {
 			panic(err)
@@ -272,6 +272,7 @@ func Main(args []string, conf *config.Config, modes map[string]Mode, minPosSuppo
 		}
 		errors.Logf("DEBUG", "loaded neg %v" ,dt)
 		fmtr := digraph.NewFormatter(dt.(*digraph.Digraph), prfmtr)
+		errors.Logf("DEBUG", "loaded neg idx %v" ,dt.(*digraph.Digraph).Indices)
 		return dt, fmtr
 	}
 	mode, args := ParseMode(args, conf, modes, loadNeg, minPosSupport, maxNegSupport)

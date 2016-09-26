@@ -9,6 +9,8 @@ import (
 import (
 	"github.com/timtadh/data-structures/errors"
 	"github.com/timtadh/data-structures/pool"
+	"github.com/timtadh/data-structures/hashtable"
+	"github.com/timtadh/data-structures/types"
 )
 
 import (
@@ -202,59 +204,58 @@ func (g *Digraph) Root() lattice.Node {
 	return RootEmbListNode(g)
 }
 
-func (g *Digraph) SupportedAt(x lattice.Pattern, at int) (bool, error) {
+func (g *Digraph) SupportOf(x lattice.Pattern) (size, support int, err error) {
 	sg := x.(*SubgraphPattern).Pat
-	ei, _ := embeddingIterator(g, sg, nil, nil)
-	// count := 0
-	// var seen map[int]bool
-	// var sets []*hashtable.LinearHash
-	// if g.Mode&(GIS|FIS) != 0  {
-	// 	seen = make(map[int]bool)
-	// } else if g.Mode&MNI == MNI {
-	// 	sets = make([]*hashtable.LinearHash, len(sg.V))
-	// }
-	errors.Logf("DEBUG", "checking %v", sg)
-	stop := false
-	for _, ei = ei(stop); ei != nil; _, ei = ei(stop) {
-		errors.Logf("DEBUG", "found %v", sg)
-		return true, nil
+	// errors.Logf("DEBUG", "checking %v", sg)
+	_, rsg, err := sg.EstimateMatch(g.Indices)
+	if err != nil {
+		return 0, 0, err
 	}
-	// for emb, ei := ei(stop); ei != nil; emb, ei = ei(stop) {
-	// 	min := -1
-	// 	seenIt := false
-	// 	for idx, id := range emb.Ids {
-	// 		if seen != nil {
-	// 			if seen[id] {
-	// 				seenIt = true
-	// 			}
-	// 			seen[id] = true
-	// 		}
-	// 		if sets != nil {
-	// 			if sets[idx] == nil {
-	// 				sets[idx] = hashtable.NewLinearHash()
-	// 			}
-	// 			set := sets[idx]
-	// 			if !set.Has(types.Int(id)) {
-	// 				set.Put(types.Int(id), emb)
-	// 			}
-	// 			size := set.Size()
-	// 			if min == -1 || size < min {
-	// 				min = size
-	// 			}
-	// 		}
-	// 	}
-	// 	stop = true
-	// 	if !seenIt {
-	// 		count++
-	// 		if count >= at {
-	// 			stop = true
-	// 		}
-	// 	}
-	// 	if min >= at {
-	// 		stop = true
-	// 	}
-	// }
-	return stop, nil
+	// errors.Logf("DEBUG", "rsg %v, %p", rsg, g.Labels)
+	if len(rsg.V) == 0 {
+		return 0, len(g.G.V), nil
+	}
+	ei, _ := embeddingIterator(g, rsg, nil, nil)
+	count := 0
+	var seen map[int]bool
+	var sets []*hashtable.LinearHash
+	if g.Mode&(GIS|FIS) != 0  {
+		seen = make(map[int]bool)
+	} else if g.Mode&MNI == MNI {
+		sets = make([]*hashtable.LinearHash, len(sg.V))
+	}
+	stop := false
+	for emb, ei := ei(stop); ei != nil; emb, ei = ei(stop) {
+		min := -1
+		seenIt := false
+		for idx, id := range emb.Ids {
+			if seen != nil {
+				if seen[id] {
+					seenIt = true
+				}
+				seen[id] = true
+			}
+			if sets != nil {
+				if sets[idx] == nil {
+					sets[idx] = hashtable.NewLinearHash()
+				}
+				set := sets[idx]
+				if !set.Has(types.Int(id)) {
+					set.Put(types.Int(id), emb)
+				}
+				size := set.Size()
+				if min == -1 || size < min {
+					min = size
+				}
+			}
+		}
+		if g.Mode&(GIS|FIS) != 0 && !seenIt {
+			count++
+		} else if g.Mode&(MNI) != 0 {
+			count = min
+		}
+	}
+	return len(rsg.E), count, nil
 }
 
 func VE(node lattice.Node) (V, E int) {

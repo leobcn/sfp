@@ -59,6 +59,9 @@ func (sg *SubGraph) Embedded(indices *digraph.Indices) (found bool, edgeChain []
 		// startIdx := sg.searchStartingPoint(MostExtensions, indices, nil)
 		chain := sg.edgeChain(indices, nil, startIdx)
 		vembs := sg.startEmbeddings(indices, startIdx)
+		// errors.Logf("DEBUG", "chain %v", chain)
+		// errors.Logf("DEBUG", "vembs %v", vembs)
+		// errors.Logf("DEBUG", "color idx %v", indices.ColorIndex)
 		stack := make([]entry, 0, len(vembs)*2)
 		for _, vemb := range vembs {
 			stack = append(stack, entry{vemb, 0})
