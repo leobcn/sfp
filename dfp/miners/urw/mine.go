@@ -80,20 +80,45 @@ func (m *Miner) Mine(dt lattice.DataType, rptr miners.Reporter, fmtr lattice.For
 }
 
 func (m *Miner) mine() (err error) {
-	for i := 0; i < m.Samples; i++ {
-		cur := m.Pos.Root()
-		prev := cur
-		for cur != nil {
-			errors.Logf("DEBUG", "cur %v", cur)
-			prev = cur
-			cur, err = uniform(m.filterNegs(cur.Children()))
+	seen, err := m.Config.BytesIntMultiMap("stack-seen")
+	if err != nil {
+		return err
+	}
+	add := func(stack []lattice.Node, n lattice.Node) ([]lattice.Node, error) {
+		err := seen.Add(n.Pattern().Label(), 1)
+		if err != nil {
+			return nil, err
+		}
+		return append(stack, n), nil
+	}
+	pop := func(stack []lattice.Node) ([]lattice.Node, lattice.Node) {
+		return stack[:len(stack)-1], stack[len(stack)-1]
+	}
+	stack := make([]lattice.Node, 0, 10)
+	stack, err = add(stack, m.Pos.Root())
+	for len(stack) > 0 {
+		var n lattice.Node
+		stack, n = pop(stack)
+		errors.Logf("DEBUG", "cur %v", n)
+		if m.Pos.Acceptable(n) {
+			err = m.Rptr.Report(n)
 			if err != nil {
 				return err
 			}
 		}
-		err = m.Rptr.Report(prev)
+		kids, err := m.filterNegs(n.Children())
 		if err != nil {
 			return err
+		}
+		for _, k := range kids {
+			if has, err := seen.Has(k.Pattern().Label()); err != nil {
+				return err
+			} else if !has {
+				stack, err = add(stack, k)
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -107,15 +132,16 @@ func (m *Miner) filterNegs(slice []lattice.Node, err error) ([]lattice.Node, err
 	count := 0
 	for _, n := range slice {
 		pat := n.Pattern()
-		m.Pos.SupportOf(pat)
 		size, support, err := m.Neg.SupportOf(pat)
 		if err != nil {
 			return nil, err
 		}
 		// errors.Logf("DEBUG", "%v %v of pat %v", size, support, pat)
-		if float64(size)/float64(pat.Level()) >= .7 && pat.Level() > 1 {
+		if float64(size)/float64(pat.Level()) >= .8 && pat.Level() > 1 {
 			// skip it
-		} else if float64(size)/float64(pat.Level()) <= 0 {
+		} else if pat.Level() == 0 && support > m.MaxNegSupport {
+			// skip it
+		} else if float64(size)/float64(pat.Level()) <= .2 {
 			filtered = append(filtered, n)
 			count++
 		} else if support <= m.MaxNegSupport {

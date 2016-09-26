@@ -270,14 +270,11 @@ func Main(args []string, conf *config.Config, modes map[string]Mode, minPosSuppo
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
-		errors.Logf("DEBUG", "loaded neg %v" ,dt)
 		fmtr := digraph.NewFormatter(dt.(*digraph.Digraph), prfmtr)
-		errors.Logf("DEBUG", "loaded neg idx %v" ,dt.(*digraph.Digraph).Indices)
 		return dt, fmtr
 	}
 	mode, args := ParseMode(args, conf, modes, loadNeg, minPosSupport, maxNegSupport)
 	rptr, args := cmd.ParseReporter(args, conf, fmtr)
-
 	if len(args) != 0 {
 		fmt.Fprintf(os.Stderr, "unconsumed commandline options: '%v'\n", strings.Join(args, " "))
 		cmd.Usage(cmd.ErrorCodes["opts"])
