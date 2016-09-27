@@ -100,15 +100,16 @@ func (m *Miner) mine() (err error) {
 		var n lattice.Node
 		stack, n = pop(stack)
 		errors.Logf("DEBUG", "cur %v", n)
-		if m.Pos.Acceptable(n) {
+		kids, err := m.filterNegs(n.Children())
+		if err != nil {
+			return err
+		}
+		max := len(kids) == 0
+		if max && m.Pos.Acceptable(n) {
 			err = m.Rptr.Report(n)
 			if err != nil {
 				return err
 			}
-		}
-		kids, err := m.filterNegs(n.Children())
-		if err != nil {
-			return err
 		}
 		for _, k := range kids {
 			if has, err := seen.Has(k.Pattern().Label()); err != nil {
@@ -137,7 +138,7 @@ func (m *Miner) filterNegs(slice []lattice.Node, err error) ([]lattice.Node, err
 			return nil, err
 		}
 		// errors.Logf("DEBUG", "%v %v of pat %v", size, support, pat)
-		if float64(size)/float64(pat.Level()) >= .8 && pat.Level() > 1 {
+		if float64(size)/float64(pat.Level()) >= .90 && pat.Level() > 1 {
 			// skip it
 		} else if pat.Level() == 0 && support > m.MaxNegSupport {
 			// skip it
