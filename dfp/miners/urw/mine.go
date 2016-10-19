@@ -138,7 +138,7 @@ func (m *Miner) filterNegs(slice []lattice.Node, err error) ([]lattice.Node, err
 			return nil, err
 		}
 		// errors.Logf("DEBUG", "%v %v of pat %v", size, support, pat)
-		if float64(size)/float64(pat.Level()) >= .90 && pat.Level() > 1 {
+		if float64(size)/float64(pat.Level()) >= .80 && pat.Level() > 1 {
 			// skip it
 		} else if pat.Level() == 0 && support > m.MaxNegSupport {
 			// skip it
