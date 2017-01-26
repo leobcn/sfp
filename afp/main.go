@@ -146,7 +146,7 @@ func dfsMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner
 	return dfs.NewMiner(conf), args
 }
 
-func indexSpeedMode(argv []string, conf *config.Config, _ ..interface{}) (miners.Miner, []string) {
+func indexSpeedMode(argv []string, conf *config.Config, _ ...interface{}) (miners.Miner, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
 		"h",
