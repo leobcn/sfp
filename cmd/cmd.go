@@ -52,7 +52,7 @@ import (
 	"github.com/timtadh/sfp/config"
 	"github.com/timtadh/sfp/lattice"
 	"github.com/timtadh/sfp/miners"
-	"github.com/timtadh/sfp/miners/reporters"
+	"github.com/timtadh/sfp/reporters"
 	"github.com/timtadh/sfp/types/digraph"
 	"github.com/timtadh/sfp/types/digraph/subgraph"
 	"github.com/timtadh/sfp/types/itemset"
@@ -356,6 +356,7 @@ Reporters
     log                       log the samples
     file                      write the samples to a file in the output dir
     dir                       write samples to a nested dir format
+    count                     write the count of samples to a file
     unique                    takes an "inner reporter" but only passes the
                                 unique samples to inner reporter. (useful in
                                 conjunction with --non-unique)
@@ -394,6 +395,10 @@ Reporters
         -d, dir-name=<name>   name of the directory.
         --show-pr             show the selection probability (when applicable)
                               NB: may cause extra (and excessive computation)
+
+    count Options
+        -f, --filename=<name> name of the file to write the count.
+                              (default: count)
 
     unique Options
         --histogram=<name>    if set unique will write the histogram of how many
@@ -862,6 +867,8 @@ func digraphType(argv []string, conf *config.Config) (lattice.Loader, func(latti
 		loader, err = digraph.NewVegLoader(conf, dc)
 	case "dot":
 		loader, err = digraph.NewDotLoader(conf, dc)
+	case "int":
+		loader, err = digraph.NewIntLoader(conf, dc)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown itemset loader '%v'\n", loaderType)
 		Usage(ErrorCodes["opts"])
@@ -1004,6 +1011,40 @@ func dirReporter(rptrs map[string]Reporter, argv []string, fmtr lattice.Formatte
 		os.Exit(1)
 	}
 	return fr, args
+}
+
+func countReporter(rptrs map[string]Reporter, argv []string, fmtr lattice.Formatter, conf *config.Config) (miners.Reporter, []string) {
+	args, optargs, err := getopt.GetOpt(
+		argv,
+		"hf:",
+		[]string{
+			"help",
+            "filename=",
+		},
+	)
+	if err != nil {
+		errors.Logf("ERROR", "%v", err)
+		Usage(ErrorCodes["opts"])
+	}
+	filename := "count"
+	for _, oa := range optargs {
+		switch oa.Opt() {
+		case "-h", "--help":
+			Usage(0)
+        case "-f", "--filename":
+            filename = oa.Arg()
+		default:
+			errors.Logf("ERROR", "Unknown flag '%v'\n", oa.Opt())
+			Usage(ErrorCodes["opts"])
+		}
+	}
+	r, err := reporters.NewCount(conf, filename)
+	if err != nil {
+		errors.Logf("ERROR", "There was error creating output files\n")
+		errors.Logf("ERROR", "%v", err)
+		os.Exit(1)
+	}
+	return r, args
 }
 
 func chainReporter(reports map[string]Reporter, argv []string, fmtr lattice.Formatter, conf *config.Config) (miners.Reporter, []string) {
@@ -1233,6 +1274,59 @@ func skipReporter(reports map[string]Reporter, argv []string, fmtr lattice.Forma
 	return r, args
 }
 
+func dbscanReporter(rptrs map[string]Reporter, argv []string, fmtr lattice.Formatter, conf *config.Config) (miners.Reporter, []string) {
+	args, optargs, err := getopt.GetOpt(
+		argv,
+		"hf:e:g:a:",
+		[]string{
+			"help",
+			"filename=",
+			"epsilon=",
+			"gamma=",
+			"attr=",
+		},
+	)
+	if err != nil {
+		errors.Logf("ERROR", "%v", err)
+		Usage(ErrorCodes["opts"])
+	}
+	clusters := "clusters"
+	metrics := "metrics"
+	attr := ""
+	epsilon := 0.2
+	gamma := 0.2
+	for _, oa := range optargs {
+		switch oa.Opt() {
+		case "-h", "--help":
+			Usage(0)
+		case "-c", "--clusters-name":
+			clusters = oa.Arg()
+		case "-m", "--metrics-name":
+			metrics = oa.Arg()
+		case "-a", "--attr":
+			attr = oa.Arg()
+		case "-e", "--epsilon":
+			epsilon = ParseFloat(oa.Arg())
+		case "-g", "--gamma":
+			gamma = ParseFloat(oa.Arg())
+		default:
+			errors.Logf("ERROR", "Unknown flag '%v'\n", oa.Opt())
+			Usage(ErrorCodes["opts"])
+		}
+	}
+	if attr == "" {
+		errors.Logf("ERROR", "You must supply --attr=<attr> to dbscan")
+		Usage(ErrorCodes["opts"])
+	}
+	r, err := reporters.NewDbScan(conf, fmtr, clusters, metrics, attr, epsilon, gamma)
+	if err != nil {
+		errors.Logf("ERROR", "There was error creating output files\n")
+		errors.Logf("ERROR", "%v", err)
+		os.Exit(1)
+	}
+	return r, args
+}
+
 func heapProfileReporter(rptrs map[string]Reporter, argv []string, fmtr lattice.Formatter, conf *config.Config) (miners.Reporter, []string) {
 	args, optargs, err := getopt.GetOpt(
 		argv,
@@ -1288,11 +1382,13 @@ var Reporters map[string]Reporter = map[string]Reporter{
 	"log":          logReporter,
 	"file":         fileReporter,
 	"dir":          dirReporter,
+	"count":        countReporter,
 	"chain":        chainReporter,
 	"unique":       uniqueReporter,
 	"max":          maxReporter,
 	"canon-max":    canonMaxReporter,
 	"skip":         skipReporter,
+	"dbscan":       dbscanReporter,
 	"heap-profile": heapProfileReporter,
 }
 
@@ -1402,7 +1498,6 @@ func Main(args []string, conf *config.Config, modes map[string]Mode) int {
 		fmt.Fprintf(os.Stderr, "unconsumed commandline options: '%v'\n", strings.Join(args, " "))
 		Usage(ErrorCodes["opts"])
 	}
-
 
 	return Run(dt, fmtr, mode, rptr)
 }

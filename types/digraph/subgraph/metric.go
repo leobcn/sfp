@@ -6,6 +6,7 @@ import (
 )
 
 import (
+	"github.com/timtadh/data-structures/errors"
 	"github.com/timtadh/matrix"
 )
 
@@ -41,9 +42,15 @@ func (sg *SubGraph) Metric(o *SubGraph) float64 {
 		log.Fatal(err)
 	}
 	norm := W2.DenseMatrix().TwoNorm()
-	denom := float64(len(rlabels))
-	mean := norm/denom
+	size := float64(len(rlabels)*len(rlabels))
+	mean := norm/size
 	metric := math.Sqrt(mean)
+	if false {
+		errors.Logf("SIM", "sg    %v", sg)
+		errors.Logf("SIM", "o     %v", o)
+		errors.Logf("SIM", "score %v", metric)
+		errors.Logf("SIM", "W2 \n%v", W2)
+	}
 	return metric
 }
 
@@ -76,10 +83,18 @@ func (sg *SubGraph) Walks(labels map[int]int) (W matrix.Matrix) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = SEn.Add(En)
-		if err != nil {
-			log.Fatal(err)
+		r, c := SEn.GetSize()
+		for x := 0; x < r; x++ {
+			for y := 0; y < c; y++ {
+				if En.Get(x, y) != 0 {
+					SEn.Set(x, y, 1)
+				}
+			}
 		}
+		// err = SEn.Add(En)
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
 	}
 	LE, err := L.Times(SEn)
 	if err != nil {
