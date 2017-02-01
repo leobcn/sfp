@@ -80,6 +80,24 @@ func (m *Miner) Mine(dt lattice.DataType, rptr miners.Reporter, fmtr lattice.For
 }
 
 func (m *Miner) mine() (err error) {
+	for i := 0; i < m.Samples; i++ {
+		s, err := m.walk()
+		if err != nil {
+			return err
+		}
+		if !m.Pos.Acceptable(s) {
+			i--
+			continue
+		}
+		err = m.Rptr.Report(s)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Miner) mineAll() (err error) {
 	seen, err := m.Config.BytesIntMultiMap("stack-seen")
 	if err != nil {
 		return err
@@ -124,6 +142,20 @@ func (m *Miner) mine() (err error) {
 	}
 	return nil
 }
+func (m *Miner) walk() (max lattice.Node, err error) {
+	cur := m.Pos.Root()
+	prev := cur
+	for cur != nil {
+		errors.Logf("DEBUG", "cur %v", cur)
+		next, err := uniform(m.filterNegs(cur.Children()))
+		if err != nil {
+			return nil, err
+		}
+		prev = cur
+		cur = next
+	}
+	return prev, nil
+}
 
 func (m *Miner) filterNegs(slice []lattice.Node, err error) ([]lattice.Node, error) {
 	if err != nil {
@@ -133,19 +165,19 @@ func (m *Miner) filterNegs(slice []lattice.Node, err error) ([]lattice.Node, err
 	count := 0
 	for _, n := range slice {
 		pat := n.Pattern()
-		size, support, err := m.Neg.SupportOf(pat)
+		size, negSupport, err := m.Neg.SupportOf(pat)
 		if err != nil {
 			return nil, err
 		}
 		// errors.Logf("DEBUG", "%v %v of pat %v", size, support, pat)
-		if float64(size)/float64(pat.Level()) >= .80 && pat.Level() > 1 {
+		if float64(size)/float64(pat.Level()) >= .90 && pat.Level() > 1 {
 			// skip it
-		} else if pat.Level() == 0 && support > m.MaxNegSupport {
+		} else if pat.Level() == 0 && negSupport > m.MaxNegSupport {
 			// skip it
-		} else if float64(size)/float64(pat.Level()) <= .2 {
+		} else if float64(size)/float64(pat.Level()) <= .001 {
 			filtered = append(filtered, n)
 			count++
-		} else if support <= m.MaxNegSupport {
+		} else if negSupport <= m.MaxNegSupport {
 			filtered = append(filtered, n)
 			count++
 		}
